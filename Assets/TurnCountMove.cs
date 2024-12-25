@@ -7,9 +7,9 @@ public class TurnCountMove : Move
 
     public int MaxTurnCount = 1;
 
-    public override void Execute()
+    public override void OnExecute()
     {
-        base.Execute();
+        base.OnExecute();
         if (piece.TurnCount > MaxTurnCount - 1)
         {
             Active = false;

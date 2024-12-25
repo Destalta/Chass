@@ -9,9 +9,9 @@ public class Piece : NetworkBehaviour
     public bool IsBlack;
     public SpriteRenderer Sp;
     public Vector2 MousePos;
-    private bool hovering;
-    private bool clicked;
-    private bool wasClicked;
+    public bool Hovering;
+    public bool Clicked;
+    public bool WasClicked;
 
     public int Priority;
 
@@ -26,39 +26,65 @@ public class Piece : NetworkBehaviour
     public bool CanIMoveThis;
 
 
+    private Vector3? lastMovePos;
+
     void Start()
     {
+        // Initialize the sprite renderer and moves array
         Sp = gameObject.FindObject("Sprite").GetComponent<SpriteRenderer>();
         moves = GetComponentsInChildren<Move>();
-        if (isLocalPlayer)
+    }
+
+    void Update()
+    {
+        // Use isOwned to check if this client owns the piece
+        if (isOwned)
         {
             CanIMoveThis = true;
         }
-    }
-
-    
-    void Update()
-    {
-        Sp.transform.parent = null;
-
-        MousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
-        if (!CanIMoveThis)
+        else
         {
-            return;
+            CanIMoveThis = false;
         }
 
-        if (Vector2.Distance(MousePos, transform.position) <= 0.5f && !clicked)
+        foreach (Move move in GetComponentsInChildren<Move>())
+        {
+            Collider2D[] touchingPieces = Physics2D.OverlapBoxAll(transform.position, new Vector2(0.45f, 0.45f), 0);
+            if (touchingPieces.Length > 0)
+            {
+                move.IsBlocked = false;
+            }
+            else
+            {
+                move.IsBlocked = true;
+            }
+        }
+
+        // Detach the sprite for visual movement
+        Sp.transform.parent = null;
+
+        // Get mouse position in world space
+        MousePos = Camera.main.ScreenToWorldPoint(Input.mousePosition);
+
+        //if (!CanIMoveThis)
+        //{
+        //    return;
+        //}
+
+        // Highlight the piece when hovering
+        if (Vector2.Distance(MousePos, transform.position) <= 0.5f && !Clicked)
         {
             Sp.DOColor(new Color(0.75f, 0.75f, 0.75f, 1), 0.1f);
-            hovering = true;
+            Hovering = true;
         }
         else
         {
             Sp.DOColor(Color.white, 0.1f);
-            hovering = false;
+            Hovering = false;
         }
 
-        if (clicked)
+        // Handle dragging
+        if (Clicked)
         {
             Sp.transform.DOMove(MousePos, 0.1f);
         }
@@ -67,12 +93,13 @@ public class Piece : NetworkBehaviour
             Sp.transform.DOMove(transform.position, 0.1f);
         }
 
+        // Handle clicking
         if (Input.GetMouseButtonDown(0))
         {
-            if (hovering && !justClicked)
+            if (Hovering && !justClicked)
             {
-                clicked = true;
-                hovering = false;
+                Clicked = true;
+                Hovering = false;
                 Sp.sortingOrder = 1;
                 lastPos = transform.position;
                 justClicked = true;
@@ -80,53 +107,93 @@ public class Piece : NetworkBehaviour
             }
         }
 
-        if (clicked)
-        {
-            for (int i = 0; i < moves.Length; i++)
-            {
-                Move move = moves[i];
-                move.GetComponent<SpriteRenderer>().DOFade(1, 0.1f);
-            }
-        }
-        else
-        {
-            for (int i = 0; i < moves.Length; i++)
-            {
-                Move move = moves[i];
-                if (move.Active)
-                {
-                    move.GetComponent<SpriteRenderer>().DOFade(0, 0.1f);
-                    if (Vector2.Distance(MousePos, move.transform.position) <= 0.25f && wasClicked)
-                    {
-                        move.Execute();
-                        wasClicked = false;
-                    }
-                }
-            }
-        }
-
+        // Handle releasing the mouse button
         if (Input.GetMouseButtonUp(0))
         {
-            if (clicked)
+            if (Clicked)
             {
                 if (!justClicked)
                 {
                     Sp.transform.position = lastPos;
-                    clicked = false;
+                    Clicked = false;
                     Sp.sortingOrder = 0;
-                    wasClicked = true;
+                    WasClicked = true;
+
+                    // Execute valid moves
+                    foreach (Move move in moves)
+                    {
+                        if (move.Active)
+                        {
+                            move.GetComponent<SpriteRenderer>().DOFade(0, 0.1f);
+                            if (Vector2.Distance(MousePos, move.transform.position) <= 0.35f && WasClicked)
+                            {
+                                Sp.transform.position = lastPos;
+                                if (!isServer)
+                                {
+                                    lastMovePos = move.transform.position;
+                                    ExecuteMoveToServer(move.transform.position);
+                                }
+                                else
+                                {
+                                    //ExecuteMoveToClients(move.transform.position);
+                                    lastMovePos = move.transform.position;
+                                    ExecuteMove(move.transform.position);
+                                }
+                                move.GetComponent<SpriteRenderer>().DOFade(0, 0f);
+                                WasClicked = false;
+                            }
+                        }
+                    }
                 }
                 else
                 {
-                    hovering = true;
+                    Hovering = true;
                 }
             }
         }
+
+
+
+
+        // Show potential moves when clicked
+        if (Clicked)
+        {
+            foreach (Move move in moves)
+            {
+                move.GetComponent<SpriteRenderer>().DOFade(1, 0.1f);
+            }
+        }
+    }
+
+    [Command]
+    public void ExecuteMoveToServer(Vector3 pos)
+    {
+        transform.position = pos;
+    }
+
+    [ClientRpc]
+    public void ExecuteMoveToClients(Vector3 pos)
+    {
+        transform.position = pos;
+    }
+
+    public void ExecuteMove(Vector3 pos)
+    {
+        transform.position = pos;
     }
 
     private IEnumerator JustClickedRoutine()
     {
         yield return new WaitForSeconds(justClickedTime);
         justClicked = false;
+    }
+
+    private void OnDrawGizmos()
+    {
+        if (lastMovePos != null)
+        {
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawWireSphere((Vector3)lastMovePos, 0.5f);
+        }
     }
 }

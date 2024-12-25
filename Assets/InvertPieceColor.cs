@@ -16,8 +16,15 @@ public class InvertPieceColor : MonoBehaviour
     void Update()
     {
         piece = GetComponent<Piece>();
-        sp = piece.gameObject.FindObject("Sprite").GetComponent<SpriteRenderer>();
-
+        if (piece.Sp)
+        {
+            sp = piece.Sp;
+        }
+        else
+        {
+            sp = piece.gameObject.FindObject("Sprite").GetComponent<SpriteRenderer>();
+        }
+        
         if (piece.IsBlack)
         {
             sp.material = (Material)Resources.Load("InvertColor");
